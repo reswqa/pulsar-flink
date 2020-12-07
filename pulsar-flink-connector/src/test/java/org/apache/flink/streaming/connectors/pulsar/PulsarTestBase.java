@@ -18,12 +18,12 @@ import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.connector.pulsar.source.BrokerPartition;
+import org.apache.flink.connector.pulsar.source.PulsarSourceOptions;
 import org.apache.flink.connector.pulsar.source.StartOffsetInitializer;
 import org.apache.flink.connector.pulsar.source.StopCondition;
 import org.apache.flink.connector.pulsar.source.split.PulsarPartitionSplit;
 import org.apache.flink.connector.pulsar.source.util.PulsarAdminUtils;
 import org.apache.flink.metrics.jmx.JMXReporter;
-import org.apache.flink.streaming.connectors.pulsar.internal.PulsarOptions;
 import org.apache.flink.streaming.connectors.pulsar.internal.TopicRange;
 import org.apache.flink.streaming.util.TestStreamEnvironment;
 import org.apache.flink.util.TestLogger;
@@ -36,7 +36,10 @@ import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.MessageRouter;
+import org.apache.pulsar.client.api.MessageRoutingMode;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -46,8 +49,10 @@ import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
 import org.apache.pulsar.client.api.schema.SchemaDefinition;
 import org.apache.pulsar.client.impl.ClientBuilderImpl;
+import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
 import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
+import org.apache.pulsar.client.impl.conf.ProducerConfigurationData;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.schema.SchemaType;
 import org.junit.AfterClass;
@@ -61,6 +66,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import static org.mockito.Mockito.mock;
@@ -175,7 +181,7 @@ public abstract class PulsarTestBase extends TestLogger {
             String topic,
             SchemaType type,
             List<T> messages,
-            Optional<Integer> partition) throws PulsarClientException {
+            Optional<Integer> partition) throws PulsarClientException, ExecutionException, InterruptedException {
 
         return sendTypedMessages(topic, type, messages, partition, null);
     }
@@ -183,65 +189,100 @@ public abstract class PulsarTestBase extends TestLogger {
     public static <T> Producer<T> getProducer(String topic,
                                               SchemaType type,
                                               Optional<Integer> partition,
-                                              Class<T> tClass) throws PulsarClientException {
-        String topicName;
+                                              Class<T> tClass) throws PulsarClientException, ExecutionException, InterruptedException {
+        PulsarClient client = PulsarClient.builder().serviceUrl(getServiceUrl()).build();
+        ProducerConfigurationData producerConfigurationData = null;
         if (partition.isPresent()) {
-            topicName = topic + PulsarOptions.PARTITION_SUFFIX + partition.get();
-        } else {
-            topicName = topic;
+            producerConfigurationData = new ProducerConfigurationData();
+            producerConfigurationData.setMessageRoutingMode(MessageRoutingMode.CustomPartition);
+            producerConfigurationData.setTopicName(topic);
+            producerConfigurationData.setCustomMessageRouter(new MessageRouter() {
+                @Override
+                public int choosePartition(Message<?> msg) {
+                    return partition.get();
+                }
+            });
         }
 
         Producer producer = null;
 
-        PulsarClient client = PulsarClient.builder().serviceUrl(getServiceUrl()).build();
         switch (type) {
             case BOOLEAN:
-                producer = (Producer<T>) client.newProducer(Schema.BOOL).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.BOOL, null).get() :
+                        (Producer<T>) client.newProducer(Schema.BOOL).topic(topic).create();
                 break;
             case BYTES:
-                producer = (Producer<T>) client.newProducer(Schema.BYTES).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.BYTES, null).get() :
+                        (Producer<T>) client.newProducer(Schema.BYTES).topic(topic).create();
                 break;
             case LOCAL_DATE:
-                producer = (Producer<T>) client.newProducer(Schema.LOCAL_DATE).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.LOCAL_DATE, null).get() :
+                        (Producer<T>) client.newProducer(Schema.LOCAL_DATE).topic(topic).create();
                 break;
             case DATE:
-                producer = (Producer<T>) client.newProducer(Schema.DATE).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.DATE, null).get() :
+                        (Producer<T>) client.newProducer(Schema.DATE).topic(topic).create();
                 break;
             case STRING:
-                producer = (Producer<T>) client.newProducer(Schema.STRING).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.STRING, null).get() :
+                        (Producer<T>) client.newProducer(Schema.STRING).topic(topic).create();
                 break;
             case TIMESTAMP:
-                producer = (Producer<T>) client.newProducer(Schema.TIMESTAMP).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.TIMESTAMP, null).get() :
+                        (Producer<T>) client.newProducer(Schema.TIMESTAMP).topic(topic).create();
                 break;
             case LOCAL_DATE_TIME:
-                producer = (Producer<T>) client.newProducer(Schema.LOCAL_DATE_TIME).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.LOCAL_DATE_TIME, null).get() :
+                        (Producer<T>) client.newProducer(Schema.LOCAL_DATE_TIME).topic(topic).create();
                 break;
             case INT8:
-                producer = (Producer<T>) client.newProducer(Schema.INT8).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.INT8, null).get() :
+                        (Producer<T>) client.newProducer(Schema.INT8).topic(topic).create();
                 break;
             case DOUBLE:
-                producer = (Producer<T>) client.newProducer(Schema.DOUBLE).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.DOUBLE, null).get() :
+                        (Producer<T>) client.newProducer(Schema.DOUBLE).topic(topic).create();
                 break;
             case FLOAT:
-                producer = (Producer<T>) client.newProducer(Schema.FLOAT).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.FLOAT, null).get() :
+                        (Producer<T>) client.newProducer(Schema.FLOAT).topic(topic).create();
                 break;
             case INT32:
-                producer = (Producer<T>) client.newProducer(Schema.INT32).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.INT32, null).get() :
+                        (Producer<T>) client.newProducer(Schema.INT32).topic(topic).create();
                 break;
             case INT16:
-                producer = (Producer<T>) client.newProducer(Schema.INT16).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.INT16, null).get() :
+                        (Producer<T>) client.newProducer(Schema.INT16).topic(topic).create();
                 break;
             case INT64:
-                producer = (Producer<T>) client.newProducer(Schema.INT64).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.INT64, null).get() :
+                        (Producer<T>) client.newProducer(Schema.INT64).topic(topic).create();
                 break;
             case AVRO:
                 SchemaDefinition<Object> schemaDefinition =
                         SchemaDefinition.builder().withPojo(tClass).withJSR310ConversionEnabled(true).build();
-                producer =
-                        (Producer<T>) client.newProducer(Schema.AVRO(schemaDefinition)).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.AVRO(schemaDefinition), null).get() :
+                        (Producer<T>) client.newProducer(Schema.AVRO(schemaDefinition)).topic(topic).create();
                 break;
             case JSON:
-                producer = (Producer<T>) client.newProducer(Schema.JSON(tClass)).topic(topicName).create();
+                producer = partition.isPresent() ?
+                        ((PulsarClientImpl) client).createProducerAsync(producerConfigurationData, Schema.JSON(tClass), null).get() :
+                        (Producer<T>) client.newProducer(Schema.JSON(tClass)).topic(topic).create();
                 break;
 
             default:
@@ -255,7 +296,7 @@ public abstract class PulsarTestBase extends TestLogger {
             SchemaType type,
             List<T> messages,
             Optional<Integer> partition,
-            Class<T> tClass) throws PulsarClientException {
+            Class<T> tClass) throws PulsarClientException, ExecutionException, InterruptedException {
 
         Producer<T> producer = getProducer(topic, type, partition, tClass);
         List<MessageId> mids = new ArrayList<>();
@@ -278,7 +319,7 @@ public abstract class PulsarTestBase extends TestLogger {
                                                                     List<Long> sequenceIds,
                                                                     List<Map<String, String>> properties,
                                                                     List<String> keys
-    ) throws PulsarClientException {
+    ) throws PulsarClientException, ExecutionException, InterruptedException {
         Producer<T> producer = getProducer(topic, type, partition, tClass);
         List<MessageId> mids = new ArrayList<>();
         for (int i = 0; i < messages.size(); i++) {
@@ -357,7 +398,7 @@ public abstract class PulsarTestBase extends TestLogger {
         final Map<Integer, Map<String, PulsarPartitionSplit>> splitsByOwners = new HashMap<>();
         for (String topic : topics) {
             getPartitionsForTopic(topic).forEach(partition -> {
-                int ownerReader = Math.abs(partition.hashCode()) % numSubtasks;
+                int ownerReader = ((partition.hashCode() * 31) & 0x7FFFFFFF) % numSubtasks;
                 PulsarPartitionSplit split = new PulsarPartitionSplit(
                         partition, StartOffsetInitializer.earliest(), StopCondition.stopAfterLast());
                 splitsByOwners
@@ -372,5 +413,11 @@ public abstract class PulsarTestBase extends TestLogger {
         final String topic = TopicName.get("topic" + RandomStringUtils.randomNumeric(8)).toString();
         topics.add(topic);
         return topic;
+    }
+
+    public static Configuration getConsumerConfiguration() {
+        Configuration configuration = new Configuration();
+        configuration.setString(PulsarSourceOptions.ADMIN_URL, adminUrl);
+        return configuration;
     }
 }

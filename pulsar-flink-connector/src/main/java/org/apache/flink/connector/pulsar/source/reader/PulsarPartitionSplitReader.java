@@ -14,6 +14,7 @@
 
 package org.apache.flink.connector.pulsar.source.reader;
 
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.time.Deadline;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
@@ -231,8 +232,8 @@ public class PulsarPartitionSplitReader<T> implements SplitReader<ParsedMessage<
                 if (offsetVerification != OffsetVerification.IGNORE) {
                     startOffsetInitializer.verifyOffset(
                             partition,
-                            wrap(() -> Optional.ofNullable(pulsarAdmin.topics().getLastMessageId(partition.getTopic()))),
-                            wrap(() -> pulsarAdmin.topics().peekMessages(partition.getTopic(), conf.getSubscriptionName(), 1).stream().findFirst()))
+                            AsyncUtils.wrap(() -> Optional.ofNullable(pulsarAdmin.topics().getLastMessageId(partition.getTopic()))),
+                            AsyncUtils.wrap(() -> pulsarAdmin.topics().peekMessages(partition.getTopic(), conf.getSubscriptionName(), 1).stream().findFirst()))
                             .ifPresent(error -> reportDataLoss(partition, error));
                 }
 
@@ -247,17 +248,6 @@ public class PulsarPartitionSplitReader<T> implements SplitReader<ParsedMessage<
         }
         //for now we just support broker type partition.
         return completableFuture;
-    }
-
-    private <T> Supplier<T> wrap(SupplierWithException<T, ?> supplierWithException) {
-        return () -> {
-            try {
-                return supplierWithException.get();
-            } catch (Throwable throwable) {
-                ExceptionUtils.rethrow(throwable);
-                return null;
-            }
-        };
     }
 
     private void reportDataLoss(AbstractPartition partition, String error) {

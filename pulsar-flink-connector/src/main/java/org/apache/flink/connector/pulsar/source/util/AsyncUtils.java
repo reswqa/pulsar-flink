@@ -14,8 +14,11 @@
 
 package org.apache.flink.connector.pulsar.source.util;
 
+import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.function.BiConsumerWithException;
 import org.apache.flink.util.function.FunctionWithException;
+import org.apache.flink.util.function.SupplierWithException;
 
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
@@ -26,6 +29,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiPredicate;
+import java.util.function.Supplier;
 
 /**
  * A util class for asynchronous call of method.
@@ -63,5 +67,16 @@ public class AsyncUtils {
                 throw new TimeoutException("Timeout while waiting for " + elements.get(index));
             }
         }
+    }
+
+    public static <T> Supplier<T> wrap(SupplierWithException<T, ?> supplierWithException) {
+        return () -> {
+            try {
+                return supplierWithException.get();
+            } catch (Throwable throwable) {
+                ExceptionUtils.rethrow(throwable);
+                return null;
+            }
+        };
     }
 }

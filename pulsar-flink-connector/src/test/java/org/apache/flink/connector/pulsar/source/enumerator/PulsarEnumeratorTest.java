@@ -410,11 +410,4 @@ public class PulsarEnumeratorTest extends PulsarTestBase {
         assignments.forEach((reader, assignment) -> enumState.put(reader, new ArrayList<>(assignment)));
         return enumState;
     }
-
-    private static Configuration getConsumerConfiguration() {
-        Configuration configuration = new Configuration();
-        configuration.setString(PulsarSourceOptions.ADMIN_URL, adminUrl);
-        return configuration;
-    }
-
 }

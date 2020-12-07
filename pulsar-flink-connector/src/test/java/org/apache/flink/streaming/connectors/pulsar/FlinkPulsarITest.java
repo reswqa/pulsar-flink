@@ -532,7 +532,7 @@ public class FlinkPulsarITest extends PulsarTestBaseWithFlink {
                     for (String tp : topics) {
                         sendTypedMessages(tp, SchemaType.INT32, newMessages, Optional.empty());
                     }
-                } catch (PulsarClientException e) {
+                } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             }
