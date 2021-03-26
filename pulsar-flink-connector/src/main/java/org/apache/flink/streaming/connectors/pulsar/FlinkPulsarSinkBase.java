@@ -406,7 +406,6 @@ abstract class FlinkPulsarSinkBase<T> extends TwoPhaseCommitSinkFunction<T, Flin
      */
     private Transaction createTransaction() throws Exception {
         PulsarClientImpl client = CachedPulsarClient.getOrCreate(clientConfigurationData);
-        Thread.sleep(100);
         Transaction transaction = client
                 .newTransaction()
                 .withTransactionTimeout(transactionTimeout, TimeUnit.MILLISECONDS)
